@@ -1,0 +1,63 @@
+{
+  "projectType": "data-platform",
+  "projectName": "Agencia ESA — GEMIS",
+  "projectDescription": "Java console application for managing ESA space missions, crew members, and spacecraft using JDBC/MySQL with CSV and XML data processing.",
+  "theme": "aspen",
+  "primaryColor": "#003247",
+  "lightColor": "#0B6FAB",
+  "darkColor": "#001E2E",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart"]
+          },
+          {
+            "group": "Architecture",
+            "pages": ["architecture/overview", "architecture/data-model", "architecture/dao-layer"]
+          },
+          {
+            "group": "Configuration",
+            "pages": ["configuration/database", "configuration/file-paths"]
+          },
+          {
+            "group": "Features",
+            "pages": ["features/csv-export", "features/xml-processing", "features/mission-queries"]
+          },
+          {
+            "group": "Reference",
+            "pages": ["reference/dao-interfaces", "reference/value-objects", "reference/exceptions"]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "DAO pattern with JDBC for MySQL — clean separation of persistence logic",
+    "CSV export of crew members without assigned missions",
+    "XML (operaciones_esa.xml) batch processing: updates missions and inserts/updates crew",
+    "Console menu for selecting operations at runtime",
+    "Centralised JDBC connection management via GestorConexionJDBC",
+    "External properties-based configuration (aplicacion.properties)",
+    "Custom exception hierarchy (AgenciaEsaException) with typed error codes"
+  ],
+  "publicApiSurface": [
+    "IMisionDAO.obtenerMisionesIniciadasEnAnyo(int anyo)",
+    "IMisionDAO.actualizarMisionPorNaveCuerpoFecha(Mision mision)",
+    "ITripulanteDAO.obtenerTripulantesSinMision()",
+    "ITripulanteDAO.obtenerTripulantePorIdESA(int identificadorESA)",
+    "ITripulanteDAO.actualizarTripulantePorIdESA(Tripulante tripulante)",
+    "ITripulanteDAO.insertarTripulante(Tripulante tripulante)",
+    "INaveDAO (nave data access interface)",
+    "ICuerpoCelesteDAO (celestial body data access interface)",
+    "ITripulanteMisionDAO (crew-mission assignment data access interface)",
+    "ProcesadorTripulantesCSV.almacenarTripulantesSinMisionEnFicheroCSV()",
+    "ProcesadorXMLMision.procesarFicheroXMLMisiones()",
+    "GestorConexionJDBC.obtenerConexion()",
+    "GestorFicheroConfiguracion.obtenerValor(String clave)",
+    "AgenciaEsaException (error codes: ERROR_GENERAL, ERROR_GESTION_CONEXION, ERROR_CONSULTA, ERROR_INSERCION, ERROR_ACTUALIZACION, ERROR_BORRADO)"
+  ]
+}
