@@ -1,0 +1,165 @@
+---
+title: "DAO Layer"
+description: "How the Data Access Object pattern is structured and implemented with JDBC in GEMIS."
+---
+
+GEMIS uses the **Data Access Object (DAO)** pattern to separate persistence logic from the rest of the application. Each domain entity has a dedicated interface in `eu.esa.gemis.dao` and a MySQL/JDBC implementation in `eu.esa.gemis.dao.impl`.
+
+## Interface-to-Implementation Mapping
+
+| Interface | Implementation | Active methods |
+|---|---|---|
+| `IMisionDAO` | `MisionDaoJDBC` | `obtenerMisionesIniciadasEnAnyo`, `actualizarMisionPorNaveCuerpoFecha` |
+| `ITripulanteDAO` | `TripulanteDaoJDBC` | `obtenerTripulantesSinMision`, `obtenerTripulantePorIdESA`, `actualizarTripulantePorIdESA`, `insertarTripulante` |
+| `INaveDAO` | `NaveDaoJDBC` | *(stub — no methods yet)* |
+| `ICuerpoCelesteDAO` | `CuerpoCelesteDaoJDBC` | *(stub — no methods yet)* |
+| `IBaseDAO` | `BaseDaoJDBC` | *(stub — no methods yet)* |
+| `IGeneradorPrincipalDAO` | `GeneradorPrincipalDaoJDBC` | *(stub — no methods yet)* |
+| `ITripulanteMisionDAO` | `TripulanteMisionDaoJDBC` | *(stub — no methods yet)* |
+
+<Note>
+  Several interfaces are currently empty stubs. They exist to reserve the contract and allow future implementations to be added without changing calling code.
+</Note>
+
+## Connection Management
+
+Every JDBC method opens a connection by calling `GestorConexionJDBC.obtenerConexion()` inside a **try-with-resources** block. Both the `Connection` and the `PreparedStatement` are declared as managed resources, so they are closed automatically when the block exits — whether normally or via an exception.
+
+```java
+try (Connection conexion = GestorConexionJDBC.obtenerConexion();
+     PreparedStatement pstm = conexion.prepareStatement(sentenciaSQL)) {
+
+    pstm.setInt(1, anyo);
+    ResultSet resultadoSentencia = pstm.executeQuery();
+    // ... map rows to VOs ...
+
+} catch (SQLException e) {
+    throw new AgenciaEsaException(e, getClass(), AgenciaEsaException.ERROR_CONSULTA);
+}
+```
+
+There is no connection pool or persistent connection object. Each DAO method is fully self-contained.
+
+## DAO Interface Contracts
+
+### IMisionDAO
+
+```java
+public interface IMisionDAO {
+    List<Mision> obtenerMisionesIniciadasEnAnyo(int anyo) throws AgenciaEsaException;
+    void actualizarMisionPorNaveCuerpoFecha(Mision mision) throws AgenciaEsaException;
+}
+```
+
+### ITripulanteDAO
+
+```java
+public interface ITripulanteDAO {
+    List<Tripulante> obtenerTripulantesSinMision() throws AgenciaEsaException;
+    Tripulante obtenerTripulantePorIdESA(int identificadorESA) throws AgenciaEsaException;
+    void actualizarTripulantePorIdESA(Tripulante tripulante) throws AgenciaEsaException;
+    void insertarTripulante(Tripulante tripulante) throws AgenciaEsaException;
+}
+```
+
+## Real SQL Queries
+
+### SELECT — missions started in a given year
+
+Used by `MisionDaoJDBC.obtenerMisionesIniciadasEnAnyo(int anyo)`:
+
+```sql
+SELECT tm.nombre         AS nombre_mision,
+       tm.fecha_inicio,
+       tn.codigo         AS codigo_nave,
+       tn.capacidad_tripulacion,
+       tcc.nombre        AS nombre_cuerpo_celeste,
+       tcc.tipo
+FROM   T_MISION tm
+       JOIN T_NAVE tn
+         ON tm.cod_nave = tn.codigo
+       JOIN T_CUERPO_CELESTE tcc
+         ON tm.id_cuerpo_celeste = tcc.identificador
+WHERE  YEAR(tm.fecha_inicio) = ?
+```
+
+The result set is mapped row-by-row: a `Mision` VO is created and its `nave` and `cuerpoCeleste` fields are populated with partially-filled `Nave` and `CuerpoCeleste` objects (only the columns selected above are set).
+
+### UPDATE — mission by spacecraft, celestial body, and start date
+
+Used by `MisionDaoJDBC.actualizarMisionPorNaveCuerpoFecha(Mision mision)`:
+
+```sql
+UPDATE T_MISION
+SET    nombre              = ?,
+       fecha_fin_estimado  = ?,
+       fecha_fin           = ?,
+       estado              = ?,
+       objetivo_principal  = ?,
+       presupuesto_asignado = ?
+WHERE  cod_nave = ?
+  AND  id_cuerpo_celeste = (
+           SELECT tcc.identificador
+           FROM   T_CUERPO_CELESTE tcc
+           WHERE  tcc.nombre = ?
+       )
+  AND  fecha_inicio = ?
+```
+
+<Tip>
+  The `WHERE` clause uses the composite key `(cod_nave, id_cuerpo_celeste, fecha_inicio)` to identify the mission uniquely rather than a surrogate integer ID. The celestial body is resolved from its name via a correlated subquery.
+</Tip>
+
+Parameter binding for the UPDATE:
+
+```java
+pstm.setString(1, mision.getNombre());
+pstm.setDate(2,   Date.valueOf(mision.getFechaFinEstimado()));
+Date fechaFin = mision.getFechaFin() != null ? Date.valueOf(mision.getFechaFin()) : null;
+pstm.setDate(3,   fechaFin);
+pstm.setString(4, mision.getEstado());
+pstm.setString(5, mision.getObjetivoPrincipal());
+pstm.setInt(6,    mision.getPresupuestoAsignado());
+pstm.setString(7, mision.getNave().getCodigo());
+pstm.setString(8, mision.getCuerpoCeleste().getNombre());
+pstm.setDate(9,   Date.valueOf(mision.getFechaInicio()));
+```
+
+## Usage from the Application Layer
+
+The caller works exclusively against the interface type, instantiating the concrete JDBC class once:
+
+```java
+// AplicacionAgenciaESA.java — option 3
+IMisionDAO iMisionDAO = new MisionDaoJDBC();
+List<Mision> listaMisiones = iMisionDAO.obtenerMisionesIniciadasEnAnyo(2034);
+
+for (Mision mision : listaMisiones) {
+    String fechaFormateada = ConversorTiposDatosYFormatos
+            .convertirAFechaConFormato(mision.getFechaInicio(), "dd/MM/yyyy");
+
+    String texto = "La misión %s comenzó el %s con destino a %s (%s) "
+                 + "utilizando la nave %s con capacidad para %d tripulantes.";
+    System.out.println(String.format(texto,
+            mision.getNombre(),
+            fechaFormateada,
+            mision.getCuerpoCeleste().getNombre(),
+            mision.getCuerpoCeleste().getTipo(),
+            mision.getNave().getCodigo(),
+            mision.getNave().getCapacidadTripulacion()));
+}
+```
+
+## Error Handling
+
+Every `SQLException` is caught inside the DAO and re-thrown as an `AgenciaEsaException` with a typed error code and the originating class:
+
+| Error code constant | Used when |
+|---|---|
+| `AgenciaEsaException.ERROR_CONSULTA` | SELECT query fails |
+| `AgenciaEsaException.ERROR_INSERCION` | INSERT fails |
+| `AgenciaEsaException.ERROR_ACTUALIZACION` | UPDATE fails |
+| `AgenciaEsaException.ERROR_BORRADO` | DELETE fails |
+| `AgenciaEsaException.ERROR_GESTION_CONEXION` | Connection cannot be obtained |
+
+The top-level `main` method in `AplicacionAgenciaESA` catches `AgenciaEsaException`, reads `e.getCodigoError()` and `e.getClaseOrigen().getName()`, and prints a human-readable error message before printing the stack trace.

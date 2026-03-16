@@ -1,0 +1,141 @@
+---
+title: "Database Configuration"
+description: "Configure the MySQL JDBC connection for the GEMIS application using the aplicacion.properties file."
+---
+
+GEMIS connects to a MySQL database via JDBC. All connection parameters are read at startup from a single properties file: `configuracion/aplicacion.properties`.
+
+## Properties file location
+
+The file path is hardcoded in `GestorFicheroConfiguracion`:
+
+```java
+private static final String RUTA_FICHERO_CONFIGURACION = "configuracion/aplicacion.properties";
+```
+
+This path is **relative to the working directory** where the JVM is launched. When running from the project root (e.g., via Maven or directly from the IDE), the file must exist at `<project-root>/configuracion/aplicacion.properties`.
+
+## How configuration is loaded
+
+`GestorFicheroConfiguracion` uses a `static` initializer block to load the file once when the class is first referenced. Any class that calls `GestorFicheroConfiguracion.obtenerValor(...)` triggers this load.
+
+```java
+static {
+    PROPIEDADES = new Properties();
+    try (FileInputStream is = new FileInputStream(RUTA_FICHERO_CONFIGURACION)) {
+        if (is != null) {
+            PROPIEDADES.load(is);
+        }
+    } catch (IOException e) {
+        throw new IllegalStateException("Error al cargar application.properties", e);
+    }
+}
+```
+
+If the file is missing or unreadable, the application throws an `IllegalStateException` and will not start.
+
+## How the JDBC connection is obtained
+
+`GestorConexionJDBC.obtenerConexion()` reads the three JDBC properties and calls `DriverManager.getConnection()`:
+
+```java
+public static Connection obtenerConexion() throws SQLException {
+    String url      = GestorFicheroConfiguracion.obtenerValor("jdbc.url");
+    String usuario  = GestorFicheroConfiguracion.obtenerValor("jdbc.usuario");
+    String password = GestorFicheroConfiguracion.obtenerValor("jdbc.password");
+
+    if (url == null || usuario == null) {
+        throw new IllegalStateException(
+            "Propiedades JDBC no configuradas correctamente en application.properties"
+        );
+    }
+    return DriverManager.getConnection(url, usuario, password);
+}
+```
+
+Every DAO that needs a database connection calls this method. Each call opens a **new** connection; there is no connection pool.
+
+## JDBC URL format
+
+The `jdbc.url` value must follow the MySQL JDBC URL format:
+
+```
+jdbc:mysql://<host>:<port>/<database>
+```
+
+| Segment | Example value | Description |
+|---|---|---|
+| `<host>` | `192.168.1.36` | Hostname or IP of the MySQL server |
+| `<port>` | `3306` | MySQL port (default `3306`) |
+| `<database>` | `agencia_esa_xxx` | Schema/database name |
+
+## JDBC properties reference
+
+<ParamField path="jdbc.url" type="string" required>
+  Full JDBC connection URL for the MySQL database. Must follow the format `jdbc:mysql://<host>:<port>/<database>`.
+
+  Example: `jdbc:mysql://192.168.1.36:3306/agencia_esa_xxx`
+</ParamField>
+
+<ParamField path="jdbc.usuario" type="string" required>
+  MySQL user account used to authenticate the connection.
+
+  Example: `root`
+</ParamField>
+
+<ParamField path="jdbc.password" type="string" required>
+  Password for the MySQL user. May be left empty if the account has no password, but the key must still be present in the file.
+
+  Example: `mysql_123`
+</ParamField>
+
+## Example aplicacion.properties
+
+```properties
+# Configuración de la aplicación AgenciaESA
+# JDBC MySQL
+jdbc.url=jdbc:mysql://192.168.1.36:3306/agencia_esa_xxx
+jdbc.usuario=root
+jdbc.password=mysql_123
+
+# Fichero CSV
+ruta.fichero.csv=ficheros-datos/tripulantes_sinmision.csv
+csv.cabecera=num_tripulante|nombre|apellidos|id_esa|especialidad|fecha_ingreso
+csv.separador=|
+
+# Fichero XML Lectura
+ruta.fichero.xml=ficheros-datos/operaciones_esa.xml
+```
+
+<Note>
+  Replace `jdbc.password=mysql_123` with the actual password for your environment before running the application.
+</Note>
+
+<Warning>
+  **Never commit real credentials to version control.** Add `configuracion/aplicacion.properties` to your `.gitignore` and distribute a template file (e.g., `aplicacion.properties.example`) with placeholder values instead.
+</Warning>
+
+## Setup steps
+
+<Steps>
+  <Step title="Create the configuracion directory">
+    Create the directory at the project root if it does not already exist:
+
+    ```bash
+    mkdir -p configuracion
+    ```
+  </Step>
+  <Step title="Create the properties file">
+    Copy the example above into `configuracion/aplicacion.properties` and update the values to match your environment.
+  </Step>
+  <Step title="Verify MySQL is reachable">
+    Confirm the host, port, and credentials are correct before starting the application:
+
+    ```bash
+    mysql -h 192.168.1.36 -P 3306 -u root -p agencia_esa_xxx
+    ```
+  </Step>
+  <Step title="Run the application">
+    Launch the application from the project root so that the relative path `configuracion/aplicacion.properties` resolves correctly.
+  </Step>
+</Steps>

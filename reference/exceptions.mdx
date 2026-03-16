@@ -1,0 +1,151 @@
+---
+title: "Exceptions"
+description: "Reference for AgenciaEsaException — the custom checked exception used throughout GEMIS to wrap database errors and carry operation context."
+---
+
+## AgenciaEsaException
+
+**Package:** `eu.esa.gemis.excepcion`  
+**Hierarchy:** `java.lang.Object` → `java.lang.Throwable` → `java.lang.Exception` → `AgenciaEsaException`
+
+`AgenciaEsaException` is a checked exception that wraps a lower-level `Throwable` (typically a `SQLException`) and enriches it with two pieces of context: the class that threw the exception, and an integer error code that identifies the type of database operation that failed.
+
+```java
+public class AgenciaEsaException extends Exception {
+    private int codigoError;
+    private Class<?> claseOrigen;
+
+    public AgenciaEsaException(Throwable error, Class<?> claseOrigen, int codError) { ... }
+
+    public int getCodigoError() { ... }
+    public void setCodigoError(int codigoError) { ... }
+    public Class<?> getClaseOrigen() { ... }
+    public void setClaseOrigen(Class<?> claseOrigen) { ... }
+}
+```
+
+---
+
+## Constructor
+
+```java
+public AgenciaEsaException(Throwable error, Class<?> claseOrigen, int codError)
+```
+
+Wraps an existing `Throwable` and records the originating class and error code. Calls `super(error)`, making the original exception available via `getCause()`.
+
+<ParamField path="error" type="Throwable" required>
+  The underlying exception to wrap. In DAO implementations this is always a `java.sql.SQLException`.
+</ParamField>
+
+<ParamField path="claseOrigen" type="Class&lt;?&gt;" required>
+  The class in which the exception occurred. Pass `getClass()` from the throwing DAO implementation so the message identifies the exact implementation class (e.g., `MisionDaoJDBC`).
+</ParamField>
+
+<ParamField path="codError" type="int" required>
+  One of the static error-code constants defined on `AgenciaEsaException` that describes which type of database operation failed.
+</ParamField>
+
+---
+
+## Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `codigoError` | `int` | Integer error code identifying the failed operation type. Set by the constructor; also writable via `setCodigoError()`. |
+| `claseOrigen` | `Class<?>` | The class that threw the exception. Set by the constructor; also writable via `setClaseOrigen()`. |
+
+---
+
+## Error code constants
+
+All constants are `public static final int` fields on `AgenciaEsaException`.
+
+| Constant | Value | Operation context |
+|---|---|---|
+| `ERROR_GENERAL` | `0` | Generic or unclassified error. |
+| `ERROR_GESTION_CONEXION` | `1` | Error while obtaining or managing a JDBC connection. |
+| `ERROR_CONSULTA` | `2` | Error during a SELECT query (or UPDATE — see note below). |
+| `ERROR_INSERCION` | `3` | Error during an INSERT operation. |
+| `ERROR_ACTUALIZACION` | `4` | Error during an UPDATE operation. |
+| `ERROR_BORRADO` | `5` | Error during a DELETE operation. |
+
+<Note>
+  `MisionDaoJDBC.actualizarMisionPorNaveCuerpoFecha()` currently throws with `ERROR_CONSULTA` rather than `ERROR_ACTUALIZACION`. This is an inconsistency in the current implementation — `TripulanteDaoJDBC.actualizarTripulantePorIdESA()` correctly uses `ERROR_ACTUALIZACION`.
+</Note>
+
+---
+
+## Throwing the exception
+
+All DAO implementations follow the same pattern: catch `SQLException` inside a try-with-resources block, then wrap it in `AgenciaEsaException` with the appropriate error code.
+
+```java
+// In MisionDaoJDBC
+try (Connection conexion = GestorConexionJDBC.obtenerConexion();
+     PreparedStatement pstm = conexion.prepareStatement(sentenciaSQL)) {
+    // ...
+} catch (SQLException e) {
+    throw new AgenciaEsaException(e, getClass(), AgenciaEsaException.ERROR_CONSULTA);
+}
+```
+
+```java
+// In TripulanteDaoJDBC — insert
+} catch (SQLException e) {
+    throw new AgenciaEsaException(e, getClass(), AgenciaEsaException.ERROR_INSERCION);
+}
+
+// In TripulanteDaoJDBC — update
+} catch (SQLException e) {
+    throw new AgenciaEsaException(e, getClass(), AgenciaEsaException.ERROR_ACTUALIZACION);
+}
+```
+
+---
+
+## Handling the exception
+
+`AplicacionAgenciaESA.main()` is the top-level catch site. It inspects `getCodigoError()` and `getClaseOrigen()` to produce a human-readable error message before printing the stack trace.
+
+```java
+try {
+    app.realizarTratamientoAgenciaESA();
+} catch (AgenciaEsaException e) {
+    String mensajeError = "Error en la clase %s al realizar una operación de %s";
+    String operacion = "Operación desconocida";
+    int codigoError = e.getCodigoError();
+
+    switch (codigoError) {
+        case AgenciaEsaException.ERROR_GESTION_CONEXION:
+            operacion = "Gestión de Conexión";
+            break;
+        case AgenciaEsaException.ERROR_CONSULTA:
+            operacion = "Consulta";
+            break;
+        case AgenciaEsaException.ERROR_INSERCION:
+            operacion = "Inserción";
+            break;
+        case AgenciaEsaException.ERROR_BORRADO:
+            operacion = "Borrado";
+            break;
+        case AgenciaEsaException.ERROR_ACTUALIZACION:
+            operacion = "Actualización";
+            break;
+    }
+
+    mensajeError = String.format(mensajeError, e.getClaseOrigen().getName(), operacion);
+    System.out.println(mensajeError);
+    e.printStackTrace();
+}
+```
+
+A sample console message when a query fails in `MisionDaoJDBC`:
+
+```
+Error en la clase eu.esa.gemis.dao.impl.MisionDaoJDBC al realizar una operación de Consulta
+```
+
+<Note>
+  `ERROR_GENERAL` (`0`) has no corresponding `case` in the switch statement. If an `AgenciaEsaException` is thrown with `ERROR_GENERAL`, the displayed operation string will be `"Operación desconocida"`.
+</Note>

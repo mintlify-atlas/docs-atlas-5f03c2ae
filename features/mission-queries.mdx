@@ -1,0 +1,140 @@
+---
+title: "Mission queries"
+description: "Query and print all missions that started in a given year, with spacecraft and celestial body details."
+---
+
+Operation 3 retrieves every mission whose `fecha_inicio` falls within a target year and prints a formatted summary line for each one to the console. The year is currently hardcoded to `2034`.
+
+## How to trigger
+
+Start the application and enter `3` at the menu prompt:
+
+```bash
+Menú:
+  1: Almacenar en CSV los tripulantes sin misiones asignadas.
+  2: Procesar fichero operaciones_esa.xml
+  3: Imprimir en consola el listado de misiones inciadas en un año.
+----------------------------------------------------------
+Introduce la operación a realizar:
+3
+```
+
+The console confirms the start of the operation before printing results:
+
+```
+Obtener e imprimir en consola el listado de misiones iniciadas en un año.
+```
+
+## How it works
+
+<Steps>
+  <Step title="Query the database">
+    `AplicacionAgenciaESA.ejecutarFuncionalidades()` calls `IMisionDAO.obtenerMisionesIniciadasEnAnyo(2034)`. The implementation in `MisionDaoJDBC` executes a three-table JOIN:
+
+    ```sql
+    SELECT tm.nombre         AS nombre_mision,
+           tm.fecha_inicio,
+           tn.codigo         AS codigo_nave,
+           tn.capacidad_tripulacion,
+           tcc.nombre        AS nombre_cuerpo_celeste,
+           tcc.tipo
+    FROM T_MISION tm
+        JOIN T_NAVE tn
+            ON tm.cod_nave = tn.codigo
+        JOIN T_CUERPO_CELESTE tcc
+            ON tm.id_cuerpo_celeste = tcc.identificador
+    WHERE YEAR(tm.fecha_inicio) = ?
+    ```
+
+    The `?` parameter is bound to the integer `2034`. Each result row is mapped to a `Mision` value object that carries nested `Nave` and `CuerpoCeleste` instances.
+  </Step>
+
+  <Step title="Format the start date">
+    For each `Mision` in the list, the `LocalDate` returned from `getDate("tm.fecha_inicio").toLocalDate()` is converted to a human-readable string with `ConversorTiposDatosYFormatos.convertirAFechaConFormato()`:
+
+    ```java
+    String fechaFormateada = ConversorTiposDatosYFormatos.convertirAFechaConFormato(
+        mision.getFechaInicio(),
+        "dd/MM/yyyy"
+    );
+    ```
+
+    Internally the method uses `DateTimeFormatter.ofPattern(formato)` and calls `fecha.format(formatter)`, returning a `String` such as `02/04/2034`.
+  </Step>
+
+  <Step title="Print the formatted line">
+    The formatted line is built with `String.format()` using this template (taken directly from `AplicacionAgenciaESA.java`):
+
+    ```java
+    String textoImprimir =
+        "La misión %s comenzó el %s con destino a %s (%s) "
+        + "utilizando la nave %s con capacidad para %d tripulantes.";
+
+    textoImprimir = String.format(
+        textoImprimir,
+        mision.getNombre(),                          // %s — mission name
+        fechaFormateada,                             // %s — formatted start date
+        mision.getCuerpoCeleste().getNombre(),       // %s — celestial body name
+        mision.getCuerpoCeleste().getTipo(),         // %s — celestial body type
+        mision.getNave().getCodigo(),                // %s — spacecraft code
+        mision.getNave().getCapacidadTripulacion()   // %d — crew capacity
+    );
+    System.out.println(textoImprimir);
+    ```
+  </Step>
+</Steps>
+
+## Example output
+
+For the missions defined in `operaciones_esa.xml` that start in 2034:
+
+```
+Obtener e imprimir en consola el listado de misiones iniciadas en un año.
+La misión Reabastecimiento Ares I comenzó el 02/04/2034 con destino a Marte (Planeta) utilizando la nave ESA-TRANS-02 con capacidad para 6 tripulantes.
+La misión Atmósfera Olympus I comenzó el 10/08/2034 con destino a Marte (Planeta) utilizando la nave ESA-SCIEN-03 con capacidad para 5 tripulantes.
+```
+
+## Output format reference
+
+| Placeholder | Field | Source table |
+|---|---|---|
+| `%s` (1st) | Mission name | `T_MISION.nombre` |
+| `%s` (2nd) | Start date (`dd/MM/yyyy`) | `T_MISION.fecha_inicio` |
+| `%s` (3rd) | Celestial body name | `T_CUERPO_CELESTE.nombre` |
+| `%s` (4th) | Celestial body type | `T_CUERPO_CELESTE.tipo` |
+| `%s` (5th) | Spacecraft code | `T_NAVE.codigo` |
+| `%d` (6th) | Crew capacity | `T_NAVE.capacidad_tripulacion` |
+
+## Date formatting
+
+`ConversorTiposDatosYFormatos.convertirAFechaConFormato(LocalDate fecha, String formato)` is a general-purpose utility in the `eu.esa.gemis.util` package. It accepts any pattern string valid for `java.time.format.DateTimeFormatter`. Operation 3 passes `"dd/MM/yyyy"`, producing dates such as `02/04/2034`.
+
+```java
+// From ConversorTiposDatosYFormatos.java
+public static String convertirAFechaConFormato(LocalDate fecha, String formato) {
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern(formato);
+    return fecha.format(formatter);
+}
+```
+
+<Note>
+  The target year is currently hardcoded to `2034` in `AplicacionAgenciaESA.ejecutarFuncionalidades()`. To query a different year, modify the argument passed to `obtenerMisionesIniciadasEnAnyo()`.
+</Note>
+
+## Key classes
+
+| Class / interface | Responsibility |
+|---|---|
+| `AplicacionAgenciaESA` | Calls the DAO and formats/prints each result line |
+| `IMisionDAO` | DAO contract; `obtenerMisionesIniciadasEnAnyo(int anyo)` |
+| `MisionDaoJDBC` | JDBC implementation; executes the three-table JOIN |
+| `ConversorTiposDatosYFormatos` | Formats `LocalDate` values using a given pattern string |
+
+<CardGroup cols={2}>
+  <Card title="CSV export" icon="file-csv" href="/features/csv-export">
+    Operation 1 — export crew members without mission assignments to CSV.
+  </Card>
+  <Card title="XML processing" icon="file-code" href="/features/xml-processing">
+    Operation 2 — process `operaciones_esa.xml` to update missions and upsert crew members.
+  </Card>
+</CardGroup>

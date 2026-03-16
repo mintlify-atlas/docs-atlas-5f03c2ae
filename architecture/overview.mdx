@@ -1,0 +1,79 @@
+---
+title: "Architecture Overview"
+description: "Package structure and three-layer architecture of the Agencia ESA GEMIS application."
+---
+
+GEMIS is a Java 24 console application built around a classic three-layer architecture: an application entry point drives business-process classes that delegate all persistence work to a DAO layer backed by MySQL via JDBC.
+
+## Three-Layer Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│           Application Layer                     │
+│   AplicacionAgenciaESA  (eu.esa.gemis)          │
+│   Console menu · input validation · error fmt   │
+└────────────────────┬────────────────────────────┘
+                     │ delegates to
+┌────────────────────▼────────────────────────────┐
+│           Business / Process Layer              │
+│   ProcesadorXMLMision   (eu.esa.gemis.procesos) │
+│   ProcesadorTripulantesCSV                      │
+│   ConversorTiposDatosYFormatos (eu.esa.gemis.util)│
+└────────────────────┬────────────────────────────┘
+                     │ delegates to
+┌────────────────────▼────────────────────────────┐
+│           Data Access Layer                     │
+│   DAO interfaces  (eu.esa.gemis.dao)            │
+│   JDBC implementations (eu.esa.gemis.dao.impl)  │
+│   GestorConexionJDBC   (eu.esa.gemis.gestor)    │
+└─────────────────────────────────────────────────┘
+```
+
+The application layer (`AplicacionAgenciaESA`) presents a numbered console menu, collects user input, and dispatches to one of three operations. It catches `AgenciaEsaException` at the top level and formats the error message using the exception's embedded error code and originating class.
+
+The process layer reads/writes files (XML missions, CSV crew exports) and calls DAO methods directly when only database access is needed — for example, `iMisionDAO.obtenerMisionesIniciadasEnAnyo(2034)` is called straight from `ejecutarFuncionalidades`.
+
+The data layer exposes typed DAO interfaces. Each interface is implemented by a single JDBC class that opens a fresh connection per operation using `GestorConexionJDBC.obtenerConexion()` inside a try-with-resources block.
+
+## Package Layout
+
+| Package | Responsibility |
+|---|---|
+| `eu.esa.gemis` | Application entry point (`AplicacionAgenciaESA`) |
+| `eu.esa.gemis.vo` | Value Object (VO) domain classes: `Mision`, `Tripulante`, `Nave`, `CuerpoCeleste`, `Base`, `GeneradorPrincipal`, `TripulanteMision` |
+| `eu.esa.gemis.dao` | DAO interfaces defining persistence contracts per entity |
+| `eu.esa.gemis.dao.impl` | JDBC implementations of every DAO interface |
+| `eu.esa.gemis.gestor` | `GestorConexionJDBC` — creates and returns JDBC `Connection` objects |
+| `eu.esa.gemis.procesos` | File processors: `ProcesadorXMLMision` (Jackson XML), `ProcesadorTripulantesCSV` |
+| `eu.esa.gemis.excepcion` | `AgenciaEsaException` hierarchy with typed error codes |
+| `eu.esa.gemis.util` | `ConversorTiposDatosYFormatos` — date formatting and type conversion helpers |
+
+## Main Packages
+
+<CardGroup cols={2}>
+  <Card title="eu.esa.gemis.vo" icon="database">
+    Plain Java beans (no framework annotations) representing each database table. Foreign-key relationships are modelled as object references rather than raw integer IDs.
+  </Card>
+  <Card title="eu.esa.gemis.dao / .dao.impl" icon="code">
+    Interface/implementation split keeps business logic decoupled from MySQL. Every JDBC implementation opens its own connection per operation and closes it automatically via try-with-resources.
+  </Card>
+  <Card title="eu.esa.gemis.procesos" icon="file">
+    `ProcesadorXMLMision` parses `operaciones_esa.xml` with Jackson and calls DAO methods to apply changes. `ProcesadorTripulantesCSV` queries crew with no assignment and writes `tripulantes_sin_mision.csv`.
+  </Card>
+  <Card title="eu.esa.gemis.excepcion" icon="triangle-exclamation">
+    `AgenciaEsaException` wraps `SQLException` and carries a numeric error code (`ERROR_CONSULTA`, `ERROR_INSERCION`, `ERROR_ACTUALIZACION`, `ERROR_BORRADO`, `ERROR_GESTION_CONEXION`) plus the originating class reference.
+  </Card>
+</CardGroup>
+
+## Technology Stack
+
+| Technology | Version | Role |
+|---|---|---|
+| Java | 24 | Language and runtime |
+| Maven | — | Build and dependency management |
+| MySQL Connector/J | 9.5.0 | JDBC driver for MySQL |
+| Jackson XML (`jackson-dataformat-xml`) | 3.0.1 | Parsing `operaciones_esa.xml` |
+
+<Note>
+  All Maven coordinates are defined in `pom.xml` under group `eu.esa.gemis`, artifact `AgenciaESA`, version `0.0.1-SNAPSHOT`.
+</Note>

@@ -1,0 +1,110 @@
+---
+title: "File Path Configuration"
+description: "Configure the CSV output path and XML input path used by GEMIS operations."
+---
+
+GEMIS reads and writes data files whose locations are defined in `configuracion/aplicacion.properties`. All paths are **relative to the working directory** where the JVM is launched, which is typically the project root.
+
+## Directory structure
+
+Both the CSV output file and the XML input file live inside the `ficheros-datos/` directory:
+
+```
+<project-root>/
+├── configuracion/
+│   └── aplicacion.properties
+└── ficheros-datos/
+    ├── tripulantes_sinmision.csv   ← written by operation 1
+    └── operaciones_esa.xml         ← read by operation 2
+```
+
+<Tip>
+  The `ficheros-datos/` directory must exist before running operation 1 (CSV export). `ProcesadorTripulantesCSV` calls `new FileWriter(ficheroCSV)` directly and will throw an `IOException` if the parent directory is missing. Create it in advance:
+
+  ```bash
+  mkdir -p ficheros-datos
+  ```
+</Tip>
+
+## File path properties reference
+
+<ParamField path="ruta.fichero.csv" type="string" required>
+  Path to the CSV output file where crew members without an assigned mission are written by operation 1.
+
+  Default: `ficheros-datos/tripulantes_sinmision.csv`
+
+  Used by: `ProcesadorTripulantesCSV.almacenarTripulantesSinMisionEnFicheroCSV()`
+</ParamField>
+
+<ParamField path="csv.cabecera" type="string" required>
+  Pipe-delimited header row written as the first line of the CSV file. The column order must match the fields written per row.
+
+  Default: `num_tripulante|nombre|apellidos|id_esa|especialidad|fecha_ingreso`
+</ParamField>
+
+<ParamField path="csv.separador" type="string" required>
+  Single character used as the field delimiter between columns in each CSV data row.
+
+  Default: `|`
+</ParamField>
+
+<ParamField path="ruta.fichero.xml" type="string" required>
+  Path to the XML input file containing mission operation data processed by operation 2.
+
+  Default: `ficheros-datos/operaciones_esa.xml`
+
+  Used by: `ProcesadorXMLMision.procesarFicheroXMLMisiones()`
+</ParamField>
+
+## How paths are resolved at runtime
+
+Both processors retrieve their file paths by calling `GestorFicheroConfiguracion.obtenerValor(...)` and then wrap the result in a `java.io.File`:
+
+```java
+// ProcesadorTripulantesCSV
+private String rutaFicheroCSV = GestorFicheroConfiguracion.obtenerValor("ruta.fichero.csv");
+// ...
+File ficheroCSV = new File(rutaFicheroCSV);
+
+// ProcesadorXMLMision
+private String rutaFicheroXML = GestorFicheroConfiguracion.obtenerValor("ruta.fichero.xml");
+// ...
+File ficheroXML = new File(rutaFicheroXML);
+```
+
+Because `new File(relativePath)` resolves against the JVM's working directory (`System.getProperty("user.dir")`), the paths in `aplicacion.properties` are interpreted relative to wherever you launch the application. If you run Maven from the project root, that directory becomes the working directory and `ficheros-datos/` resolves correctly.
+
+## CSV output format
+
+The CSV file produced by operation 1 uses the header and separator defined in `aplicacion.properties`:
+
+```
+num_tripulante|nombre|apellidos|id_esa|especialidad|fecha_ingreso
+1|Ana|García López|ESA-001|Piloto|2021-03-15
+2|Carlos|Martín Ruiz|ESA-007|Ingeniero|2019-08-22
+```
+
+Each data row is written in the same field order as `csv.cabecera`, separated by `csv.separador`.
+
+## Setup steps
+
+<Steps>
+  <Step title="Create the ficheros-datos directory">
+    ```bash
+    mkdir -p ficheros-datos
+    ```
+  </Step>
+  <Step title="Place the XML input file">
+    Copy `operaciones_esa.xml` into `ficheros-datos/` before running operation 2. The file must contain a root element with a `<misiones>` child that holds one or more `<mision>` elements.
+  </Step>
+  <Step title="Verify the paths in aplicacion.properties">
+    Confirm the `ruta.fichero.csv` and `ruta.fichero.xml` entries point to the correct locations for your environment. Absolute paths are also accepted if you need to place files outside the project root.
+  </Step>
+  <Step title="Run the application from the project root">
+    Launch from the directory that contains `ficheros-datos/` so that relative paths resolve correctly:
+
+    ```bash
+    java -jar AgenciaESA-0.0.1-SNAPSHOT.jar
+    ```
+  </Step>
+</Steps>

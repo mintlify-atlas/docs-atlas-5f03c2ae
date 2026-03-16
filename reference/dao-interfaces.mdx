@@ -1,0 +1,358 @@
+---
+title: "DAO Interfaces"
+description: "Full API reference for all Data Access Object interfaces, their JDBC implementations, and supporting utility classes in GEMIS."
+---
+
+The DAO layer isolates all database operations behind interfaces defined in `eu.esa.gemis.dao`. Each interface has a single JDBC implementation in `eu.esa.gemis.dao.impl`. All methods that interact with the database declare `throws AgenciaEsaException`.
+
+<Note>
+Every JDBC implementation obtains a connection via `GestorConexionJDBC.obtenerConexion()` inside a try-with-resources block, so connections are always closed automatically.
+</Note>
+
+---
+
+## IMisionDAO
+
+**Package:** `eu.esa.gemis.dao`  
+**Implementation:** `eu.esa.gemis.dao.impl.MisionDaoJDBC`
+
+Manages read and write operations for the `T_MISION` table, joined with `T_NAVE` and `T_CUERPO_CELESTE`.
+
+```java
+public interface IMisionDAO {
+    List<Mision> obtenerMisionesIniciadasEnAnyo(int anyo) throws AgenciaEsaException;
+    void actualizarMisionPorNaveCuerpoFecha(Mision mision) throws AgenciaEsaException;
+}
+```
+
+<AccordionGroup>
+  <Accordion title="obtenerMisionesIniciadasEnAnyo">
+
+    Returns all missions whose `fecha_inicio` falls within the given calendar year. Executes a three-table JOIN across `T_MISION`, `T_NAVE`, and `T_CUERPO_CELESTE`.
+
+    ```java
+    List<Mision> obtenerMisionesIniciadasEnAnyo(int anyo) throws AgenciaEsaException
+    ```
+
+    **SQL (simplified):**
+    ```sql
+    SELECT tm.nombre, tm.fecha_inicio,
+           tn.codigo, tn.capacidad_tripulacion,
+           tcc.nombre, tcc.tipo
+    FROM T_MISION tm
+      JOIN T_NAVE tn ON tm.cod_nave = tn.codigo
+      JOIN T_CUERPO_CELESTE tcc ON tm.id_cuerpo_celeste = tcc.identificador
+    WHERE YEAR(tm.fecha_inicio) = ?
+    ```
+
+    <ParamField path="anyo" type="int" required>
+      The four-digit year used to filter missions by start date.
+    </ParamField>
+
+    <ResponseField name="return" type="List&lt;Mision&gt;">
+      A list of `Mision` objects, each populated with a partial `Nave` (code and crew capacity) and a partial `CuerpoCeleste` (name and type). Returns an empty list when no missions match. Throws `AgenciaEsaException` with `ERROR_CONSULTA` on SQL failure.
+    </ResponseField>
+  </Accordion>
+
+  <Accordion title="actualizarMisionPorNaveCuerpoFecha">
+
+    Updates the editable columns of a mission record identified by its spacecraft code, celestial body name, and start date (the composite natural key used when no surrogate key is known).
+
+    ```java
+    void actualizarMisionPorNaveCuerpoFecha(Mision mision) throws AgenciaEsaException
+    ```
+
+    **SQL (simplified):**
+    ```sql
+    UPDATE T_MISION
+    SET nombre = ?, fecha_fin_estimado = ?, fecha_fin = ?,
+        estado = ?, objetivo_principal = ?, presupuesto_asignado = ?
+    WHERE cod_nave = ?
+      AND id_cuerpo_celeste = (SELECT identificador FROM T_CUERPO_CELESTE WHERE nombre = ?)
+      AND fecha_inicio = ?
+    ```
+
+    <ParamField path="mision" type="Mision" required>
+      The `Mision` object carrying the new field values. The following fields are used as the WHERE key: `mision.nave.codigo`, `mision.cuerpoCeleste.nombre`, and `mision.fechaInicio`. `mision.fechaFin` may be `null` (stored as SQL NULL).
+    </ParamField>
+
+    <ResponseField name="return" type="void">
+      Returns nothing on success. Throws `AgenciaEsaException` with `ERROR_CONSULTA` on SQL failure.
+    </ResponseField>
+
+    <Note>
+      Although the thrown code is `ERROR_CONSULTA`, this method performs an UPDATE. This is an inconsistency in the current implementation.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## ITripulanteDAO
+
+**Package:** `eu.esa.gemis.dao`  
+**Implementation:** `eu.esa.gemis.dao.impl.TripulanteDaoJDBC`
+
+Manages read and write operations for the `T_TRIPULANTE` table.
+
+```java
+public interface ITripulanteDAO {
+    List<Tripulante> obtenerTripulantesSinMision() throws AgenciaEsaException;
+    Tripulante obtenerTripulantePorIdESA(int identificadorESA) throws AgenciaEsaException;
+    void actualizarTripulantePorIdESA(Tripulante tripulante) throws AgenciaEsaException;
+    void insertarTripulante(Tripulante tripulante) throws AgenciaEsaException;
+}
+```
+
+<AccordionGroup>
+  <Accordion title="obtenerTripulantesSinMision">
+
+    Returns all crew members who have no entry in `T_TRIPULANTE_MISION` — that is, crew members not currently assigned to any mission.
+
+    ```java
+    List<Tripulante> obtenerTripulantesSinMision() throws AgenciaEsaException
+    ```
+
+    **SQL:**
+    ```sql
+    SELECT tt.numero_tripulante, tt.nombre, tt.apellidos, tt.identificador_esa,
+           tt.nivel_experiencia, tt.especialidad, tt.fecha_ingreso_esa
+    FROM T_TRIPULANTE tt
+    WHERE tt.numero_tripulante NOT IN (
+        SELECT ttm.num_tripulante FROM T_TRIPULANTE_MISION ttm
+    )
+    ```
+
+    <ResponseField name="return" type="List&lt;Tripulante&gt;">
+      A list of fully populated `Tripulante` objects. Returns an empty list when all crew members have an assigned mission. Throws `AgenciaEsaException` with `ERROR_CONSULTA` on SQL failure.
+    </ResponseField>
+  </Accordion>
+
+  <Accordion title="obtenerTripulantePorIdESA">
+
+    Looks up a single crew member by their ESA identifier.
+
+    ```java
+    Tripulante obtenerTripulantePorIdESA(int identificadorESA) throws AgenciaEsaException
+    ```
+
+    **SQL:**
+    ```sql
+    SELECT * FROM T_TRIPULANTE tt
+    WHERE tt.identificador_esa = ?
+    ```
+
+    <ParamField path="identificadorESA" type="int" required>
+      The ESA-assigned numeric identifier for the crew member.
+    </ParamField>
+
+    <ResponseField name="return" type="Tripulante">
+      A fully populated `Tripulante` object, or `null` if no record matches. Throws `AgenciaEsaException` with `ERROR_CONSULTA` on SQL failure.
+    </ResponseField>
+  </Accordion>
+
+  <Accordion title="actualizarTripulantePorIdESA">
+
+    Updates the mutable columns of an existing crew member record, identified by `identificador_esa`.
+
+    ```java
+    void actualizarTripulantePorIdESA(Tripulante tripulante) throws AgenciaEsaException
+    ```
+
+    **SQL:**
+    ```sql
+    UPDATE T_TRIPULANTE
+    SET nombre = ?, apellidos = ?, nivel_experiencia = ?,
+        especialidad = ?, fecha_ingreso_esa = ?
+    WHERE identificador_esa = ?
+    ```
+
+    <ParamField path="tripulante" type="Tripulante" required>
+      The `Tripulante` object with updated values. `tripulante.identificadorEsa` is used as the WHERE key.
+    </ParamField>
+
+    <ResponseField name="return" type="void">
+      Returns nothing on success. Throws `AgenciaEsaException` with `ERROR_ACTUALIZACION` on SQL failure.
+    </ResponseField>
+  </Accordion>
+
+  <Accordion title="insertarTripulante">
+
+    Inserts a new crew member row into `T_TRIPULANTE`. The auto-incremented `numero_tripulante` primary key is generated by the database.
+
+    ```java
+    void insertarTripulante(Tripulante tripulante) throws AgenciaEsaException
+    ```
+
+    **SQL:**
+    ```sql
+    INSERT INTO T_TRIPULANTE
+        (nombre, apellidos, identificador_esa, nivel_experiencia, especialidad, fecha_ingreso_esa)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ```
+
+    <ParamField path="tripulante" type="Tripulante" required>
+      The `Tripulante` object to insert. `numeroTripulante` is ignored; all other fields are written to the database.
+    </ParamField>
+
+    <ResponseField name="return" type="void">
+      Returns nothing on success. Throws `AgenciaEsaException` with `ERROR_INSERCION` on SQL failure.
+    </ResponseField>
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## INaveDAO
+
+**Package:** `eu.esa.gemis.dao`  
+**Implementation:** `eu.esa.gemis.dao.impl.NaveDaoJDBC`
+
+Reserved interface for spacecraft (`T_NAVE`) data access operations. No methods are currently defined.
+
+```java
+public interface INaveDAO {
+}
+```
+
+---
+
+## ICuerpoCelesteDAO
+
+**Package:** `eu.esa.gemis.dao`  
+**Implementation:** `eu.esa.gemis.dao.impl.CuerpoCelesteDaoJDBC`
+
+Reserved interface for celestial body (`T_CUERPO_CELESTE`) data access operations. No methods are currently defined.
+
+```java
+public interface ICuerpoCelesteDAO {
+}
+```
+
+---
+
+## ITripulanteMisionDAO
+
+**Package:** `eu.esa.gemis.dao`  
+**Implementation:** `eu.esa.gemis.dao.impl.TripulanteMisionDaoJDBC`
+
+Reserved interface for crew-mission assignment (`T_TRIPULANTE_MISION`) data access operations. No methods are currently defined.
+
+```java
+public interface ITripulanteMisionDAO {
+}
+```
+
+---
+
+## IBaseDAO
+
+**Package:** `eu.esa.gemis.dao`  
+**Implementation:** `eu.esa.gemis.dao.impl.BaseDaoJDBC`
+
+Reserved interface for space base (`T_BASE`) data access operations. No methods are currently defined.
+
+```java
+public interface IBaseDAO {
+}
+```
+
+---
+
+## IGeneradorPrincipalDAO
+
+**Package:** `eu.esa.gemis.dao`  
+**Implementation:** `eu.esa.gemis.dao.impl.GeneradorPrincipalDaoJDBC`
+
+Reserved interface for power generator (`T_GENERADOR_PRINCIPAL`) data access operations. No methods are currently defined.
+
+```java
+public interface IGeneradorPrincipalDAO {
+}
+```
+
+---
+
+## Utility classes
+
+### GestorConexionJDBC
+
+**Package:** `eu.esa.gemis.gestor`
+
+Stateless utility class that creates a new JDBC `Connection` for every call. Used inside try-with-resources in all DAO implementations.
+
+```java
+public static Connection obtenerConexion() throws SQLException
+```
+
+Reads `jdbc.url`, `jdbc.usuario`, and `jdbc.password` from `aplicacion.properties` via `GestorFicheroConfiguracion`. Throws `IllegalStateException` if either `url` or `usuario` is `null`. Throws `SQLException` if the driver cannot establish a connection.
+
+<ResponseField name="return" type="java.sql.Connection">
+  An active JDBC connection to the configured MySQL database. The caller is responsible for closing it (typically via try-with-resources).
+</ResponseField>
+
+**Example usage in a DAO:**
+```java
+try (Connection conexion = GestorConexionJDBC.obtenerConexion();
+     PreparedStatement pstm = conexion.prepareStatement(sentenciaSQL)) {
+    // ...
+} catch (SQLException e) {
+    throw new AgenciaEsaException(e, getClass(), AgenciaEsaException.ERROR_CONSULTA);
+}
+```
+
+---
+
+### GestorFicheroConfiguracion
+
+**Package:** `eu.esa.gemis.gestor`
+
+Stateless utility class that loads `configuracion/aplicacion.properties` once in a `static` initializer block and exposes individual property values.
+
+```java
+public static String obtenerValor(String clave)
+```
+
+<ParamField path="clave" type="String" required>
+  The property key to look up (e.g., `"jdbc.url"`, `"jdbc.usuario"`, `"jdbc.password"`).
+</ParamField>
+
+<ResponseField name="return" type="String">
+  The value associated with the key, or `null` if the key does not exist in the file.
+</ResponseField>
+
+<Warning>
+  If `configuracion/aplicacion.properties` cannot be read at class-loading time, the static initializer throws `IllegalStateException` and the application will not start.
+</Warning>
+
+---
+
+### ConversorTiposDatosYFormatos
+
+**Package:** `eu.esa.gemis.util`
+
+Stateless utility class for type and format conversions. Currently provides one method for formatting `LocalDate` values as strings.
+
+```java
+public static String convertirAFechaConFormato(LocalDate fecha, String formato)
+```
+
+<ParamField path="fecha" type="LocalDate" required>
+  The date value to format.
+</ParamField>
+
+<ParamField path="formato" type="String" required>
+  A `DateTimeFormatter`-compatible pattern string, such as `"dd/MM/yyyy"` or `"yyyy-MM-dd"`.
+</ParamField>
+
+<ResponseField name="return" type="String">
+  The date formatted as a string according to the given pattern.
+</ResponseField>
+
+**Example:**
+```java
+String fechaFormateada = ConversorTiposDatosYFormatos.convertirAFechaConFormato(
+    mision.getFechaInicio(), "dd/MM/yyyy"
+);
+// e.g. "15/03/2034"
+```

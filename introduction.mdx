@@ -1,0 +1,78 @@
+---
+title: "Introduction"
+description: "GEMIS — Gestión de Misiones Espaciales. A Java data-access application for managing ESA space missions, crew, and spacecraft."
+---
+
+# Agencia ESA — GEMIS
+
+**GEMIS** (Gestión de Misiones Espaciales) is a Java console application built for the European Space Agency (ESA) that manages space missions, crew members, spacecraft, and celestial bodies through a MySQL database using the JDBC DAO pattern.
+
+The project was developed as a 2nd-year DAM (Desarrollo de Aplicaciones Multiplataforma) exam exercise at IES Virgen de la Paloma.
+
+## What GEMIS does
+
+GEMIS provides three core operations accessible through an interactive console menu:
+
+<CardGroup cols={3}>
+  <Card title="CSV Export" icon="file-csv" href="/features/csv-export">
+    Export crew members with no assigned missions to a pipe-delimited CSV file.
+  </Card>
+  <Card title="XML Processing" icon="file-code" href="/features/xml-processing">
+    Parse `operaciones_esa.xml` to batch-update missions and insert or update crew records.
+  </Card>
+  <Card title="Mission Queries" icon="satellite" href="/features/mission-queries">
+    Query and print missions started in a given year, joined with spacecraft and celestial body data.
+  </Card>
+</CardGroup>
+
+## Core design principles
+
+| Principle | Implementation |
+|-----------|---------------|
+| Separation of concerns | DAO interfaces (`IMisionDAO`, `ITripulanteDAO`, …) decouple business logic from persistence |
+| Single connection point | `GestorConexionJDBC` centralises all JDBC connection management |
+| External configuration | `aplicacion.properties` controls DB URL, credentials, and file paths |
+| Typed error handling | `AgenciaEsaException` carries an error code and the originating class |
+
+## Key entities
+
+- **Mision** — a space mission with name, dates, status, budget, spacecraft reference, and celestial body reference
+- **Tripulante** — a crew member with ESA ID, specialty, experience level, and join date
+- **Nave** — a spacecraft with a code and crew capacity
+- **CuerpoCeleste** — a celestial body (planet, moon, etc.) with name and type
+- **TripulanteMision** — the many-to-many relationship between crew and missions
+- **Base** / **GeneradorPrincipal** — supporting entities for space stations and power generators
+
+## Technology stack
+
+<CardGroup cols={2}>
+  <Card title="Java 24" icon="java">
+    Core language with records, text blocks, and switch expressions
+  </Card>
+  <Card title="MySQL + JDBC" icon="database">
+    Direct JDBC via `mysql-connector-j 9.5.0` — no ORM layer
+  </Card>
+  <Card title="Jackson XML" icon="brackets-curly">
+    `jackson-dataformat-xml 3.0.1` for parsing `operaciones_esa.xml` as a JSON tree
+  </Card>
+  <Card title="Maven" icon="box">
+    `eu.esa.gemis:AgenciaESA:0.0.1-SNAPSHOT` build descriptor
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get the application running in minutes
+  </Card>
+  <Card title="Architecture overview" icon="diagram-project" href="/architecture/overview">
+    Understand the package and layer structure
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration/database">
+    Set up your database connection and file paths
+  </Card>
+  <Card title="DAO reference" icon="code" href="/reference/dao-interfaces">
+    Explore every DAO interface and its methods
+  </Card>
+</CardGroup>

@@ -1,0 +1,133 @@
+---
+title: "CSV export"
+description: "Export crew members without assigned missions to a pipe-delimited CSV file."
+---
+
+Operation 1 queries all crew members who have no mission assignment and writes them to a CSV file. The file path and format are controlled by `aplicacion.properties`.
+
+## How to trigger
+
+Start the application and enter `1` at the menu prompt:
+
+```bash
+Menú:
+  1: Almacenar en CSV los tripulantes sin misiones asignadas.
+  2: Procesar fichero operaciones_esa.xml
+  3: Imprimir en consola el listado de misiones inciadas en un año.
+----------------------------------------------------------
+Introduce la operación a realizar:
+1
+```
+
+When the operation completes successfully, the console prints:
+
+```
+Tripulantes sin misión almacenados en fichero tripulantes_sin_mision.csv
+```
+
+## How it works
+
+<Steps>
+  <Step title="Query crew members without missions">
+    `ProcesadorTripulantesCSV.almacenarTripulantesSinMisionEnFicheroCSV()` calls `ITripulanteDAO.obtenerTripulantesSinMision()`, which runs the following SQL against `T_TRIPULANTE`:
+
+    ```sql
+    SELECT tt.numero_tripulante, tt.nombre, tt.apellidos, tt.identificador_esa,
+           tt.nivel_experiencia, tt.especialidad, tt.fecha_ingreso_esa
+    FROM T_TRIPULANTE tt
+    WHERE tt.numero_tripulante NOT IN (
+        SELECT ttm.num_tripulante
+        FROM T_TRIPULANTE_MISION ttm
+    )
+    ```
+
+    This returns every row in `T_TRIPULANTE` whose primary key does not appear in the assignment table `T_TRIPULANTE_MISION`.
+  </Step>
+
+  <Step title="Open the output file">
+    The file path is read from the `ruta.fichero.csv` property (default: `ficheros-datos/tripulantes_sinmision.csv`). A `BufferedWriter` is opened over a `FileWriter`, which creates the file if it does not exist and truncates it if it does.
+  </Step>
+
+  <Step title="Write the header row">
+    The header is written first, taken from the `csv.cabecera` property:
+
+    ```
+    num_tripulante|nombre|apellidos|id_esa|especialidad|fecha_ingreso
+    ```
+  </Step>
+
+  <Step title="Write one row per crew member">
+    Each `Tripulante` in the result list is serialised using the `|` separator from the `csv.separador` property:
+
+    ```java
+    writer.write(
+        tripulante.getNumeroTripulante() + SEPARADOR_CSV +
+        tripulante.getNombre()           + SEPARADOR_CSV +
+        tripulante.getApellidos()        + SEPARADOR_CSV +
+        tripulante.getIdentificadorEsa() + SEPARADOR_CSV +
+        tripulante.getEspecialidad()     + SEPARADOR_CSV +
+        tripulante.getFechaIngresoEsa()
+    );
+    writer.newLine();
+    ```
+  </Step>
+</Steps>
+
+## CSV format
+
+The file is pipe-delimited (`|`). Column order matches the `csv.cabecera` property value.
+
+| Column | Source field | Type |
+|---|---|---|
+| `num_tripulante` | `Tripulante.numeroTripulante` | `int` |
+| `nombre` | `Tripulante.nombre` | `String` |
+| `apellidos` | `Tripulante.apellidos` | `String` |
+| `id_esa` | `Tripulante.identificadorEsa` | `int` |
+| `especialidad` | `Tripulante.especialidad` | `String` |
+| `fecha_ingreso` | `Tripulante.fechaIngresoEsa` | `LocalDate` (ISO-8601) |
+
+### Example output
+
+```csv
+num_tripulante|nombre|apellidos|id_esa|especialidad|fecha_ingreso
+14|Carmen|Vidal Reyes|2011|Comunicaciones|2029-03-15
+21|Dmitri|Sokolov|2019|Geología Planetaria|2031-07-22
+35|Aiko|Tanaka|2027|Biología Espacial|2033-11-04
+```
+
+## Configuration
+
+All CSV settings live in `configuracion/aplicacion.properties`:
+
+```properties
+# Fichero CSV
+ruta.fichero.csv=ficheros-datos/tripulantes_sinmision.csv
+csv.cabecera=num_tripulante|nombre|apellidos|id_esa|especialidad|fecha_ingreso
+csv.separador=|
+```
+
+<Tip>
+  Change `ruta.fichero.csv` to write the file to a different location without modifying any Java source.
+</Tip>
+
+<Note>
+  `BufferedWriter` opens the file in **overwrite** mode. Every execution replaces the previous file contents with the current query results.
+</Note>
+
+## Key classes
+
+| Class / interface | Responsibility |
+|---|---|
+| `ProcesadorTripulantesCSV` | Orchestrates the query and file write |
+| `ITripulanteDAO` | DAO contract; `obtenerTripulantesSinMision()` |
+| `TripulanteDaoJDBC` | JDBC implementation of `ITripulanteDAO` |
+| `GestorFicheroConfiguracion` | Reads `aplicacion.properties` at startup |
+
+<CardGroup cols={2}>
+  <Card title="XML processing" icon="file-code" href="/features/xml-processing">
+    Operation 2 — process `operaciones_esa.xml` to update missions and upsert crew members.
+  </Card>
+  <Card title="Mission queries" icon="list" href="/features/mission-queries">
+    Operation 3 — print missions started in a given year.
+  </Card>
+</CardGroup>

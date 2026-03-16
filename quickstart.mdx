@@ -1,80 +1,182 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get GEMIS running locally against a MySQL database in under five minutes."
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
+Before you begin, make sure the following tools are installed and available on your `PATH`:
 
-### Step 1: Set up your local environment
+| Tool | Minimum version | Purpose |
+|------|----------------|---------|
+| Java JDK | 24 | Compile and run the application |
+| Maven | 3.9+ | Build and dependency management |
+| MySQL Server | 8.0+ | Relational database backend |
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the project from GitHub and enter the project directory:
+
+    ```bash
+    git clone https://github.com/profies/agencia_esa_examen.git
+    cd agencia_esa_examen
+    ```
+  </Step>
+
+  <Step title="Create the database schema">
+    Connect to your MySQL server and create the target database. The application expects the schema name you will set in `aplicacion.properties`.
+
+    ```sql
+    CREATE DATABASE agencia_esa;
+    ```
+
+    Then run any provided SQL scripts to create the tables and seed data before continuing.
+
+    <Note>
+      The default `jdbc.url` in the sample configuration points to `agencia_esa_xxx`. Replace `xxx` with your actual schema name (e.g., `agencia_esa`).
+    </Note>
+  </Step>
+
+  <Step title="Configure the database connection">
+    Open `configuracion/aplicacion.properties` and update every property to match your local environment:
+
+    ```properties
+    # JDBC MySQL
+    jdbc.url=jdbc:mysql://localhost:3306/agencia_esa
+    jdbc.usuario=root
+    jdbc.password=your_password
+
+    # Fichero CSV
+    ruta.fichero.csv=ficheros-datos/tripulantes_sinmision.csv
+    csv.cabecera=num_tripulante|nombre|apellidos|id_esa|especialidad|fecha_ingreso
+    csv.separador=|
+
+    # Fichero XML Lectura
+    ruta.fichero.xml=ficheros-datos/operaciones_esa.xml
+    ```
+
+    The properties file is loaded at startup by `GestorFicheroConfiguracion` from the path `configuracion/aplicacion.properties`, resolved relative to the working directory from which you launch the JVM.
+
+    <Tip>
+      The CSV and XML paths are also read from this file. Make sure the `ficheros-datos/` directory exists and contains `operaciones_esa.xml` before running option 2.
+    </Tip>
+  </Step>
+
+  <Step title="Build with Maven">
+    Compile the project and download its dependencies (MySQL Connector/J 9.5.0 and Jackson XML 3.0.1):
+
+    ```bash
+    mvn package
+    ```
+
+    A successful build produces `target/AgenciaESA-0.0.1-SNAPSHOT.jar`.
+
+    <Note>
+      The compiler is configured for Java 24 (`maven.compiler.source=24`). Building with an older JDK will fail. Verify your version with `java -version`.
+    </Note>
+  </Step>
+
+  <Step title="Run the application">
+    Launch the JAR from the project root so that the relative paths to `configuracion/` and `ficheros-datos/` resolve correctly:
+
+    ```bash
+    java -jar target/AgenciaESA-0.0.1-SNAPSHOT.jar
+    ```
+
+    The application prints an interactive menu and waits for your input:
+
+    ```text
+    Menú:
+      1: Almacenar en CSV los tripulantes sin misiones asignadas.
+      2: Procesar fichero operaciones_esa.xml
+      3: Imprimir en consola el listado de misiones inciadas en un año.
+    ----------------------------------------------------------
+    Introduce la operación a realizar:
+    ```
+
+    Type `1`, `2`, or `3` and press **Enter**. If you enter any other value, the application prompts you again:
+
+    ```text
+    Has seleccionado un operación errónea (ha de ser un número entre 1 y 3)
+    Introduce la operación a realizar:
+    ```
+  </Step>
+</Steps>
+
+## Expected output per operation
 
 <AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
+  <Accordion title="Option 1 — Export unassigned crew to CSV">
+    Queries the database for crew members with no assigned mission and writes them to the file defined by `ruta.fichero.csv`.
+
+    ```text
+    Operación a realizar: 1
+    Tripulantes sin misión almacenados en fichero tripulantes_sin_mision.csv
+    ```
+
+    The output file uses the pipe character (`|`) as the column separator, as set by `csv.separador`, with a header row from `csv.cabecera`:
+
+    ```text
+    num_tripulante|nombre|apellidos|id_esa|especialidad|fecha_ingreso
+    1|Ana|García López|ESA-001|Piloto|2028-03-15
+    ...
+    ```
   </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
+
+  <Accordion title="Option 2 — Process operaciones_esa.xml">
+    Reads and processes the XML file at the path defined by `ruta.fichero.xml`. The processor parses mission update and crew-record operations from the XML tree.
+
+    ```text
+    Operación a realizar: 2
+    Ejecutar procesamiento fichero operaciones_esa.xml
+    ```
+
+    The exact operations performed depend on the contents of `operaciones_esa.xml`. See [XML processing](/features/xml-processing) for the expected document structure.
+  </Accordion>
+
+  <Accordion title="Option 3 — Print missions started in a year">
+    Queries missions that started in the year 2034 and prints one line per mission, joining spacecraft and celestial body data:
+
+    ```text
+    Operación a realizar: 3
+    Obtener e imprimir en consola el listado de misiones iniciadas en un año.
+    La misión Artemis VII comenzó el 14/03/2034 con destino a Luna (Satélite) utilizando la nave NV-007 con capacidad para 6 tripulantes.
+    La misión Ares III comenzó el 22/09/2034 con destino a Marte (Planeta) utilizando la nave NV-012 con capacidad para 4 tripulantes.
+    ```
+
+    Dates are formatted as `dd/MM/yyyy` by `ConversorTiposDatosYFormatos`.
   </Accordion>
 </AccordionGroup>
 
-### Step 2: Deploy your changes
+## Troubleshooting
 
 <AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+  <Accordion title="IllegalStateException: Propiedades JDBC no configuradas correctamente">
+    `GestorConexionJDBC` throws this error when `jdbc.url` or `jdbc.usuario` is `null`. This means `configuracion/aplicacion.properties` was not found or the keys are missing. Make sure you run the JAR from the project root directory, not from inside `target/`.
+  </Accordion>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Accordion title="IllegalStateException: Error al cargar application.properties">
+    `GestorFicheroConfiguracion` failed to open the file at `configuracion/aplicacion.properties`. Check that the file exists at that path relative to your working directory.
+  </Accordion>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
+  <Accordion title="Error en la clase … al realizar una operación de Gestión de Conexión">
+    The application caught an `AgenciaEsaException` with code `ERROR_GESTION_CONEXION`. Verify that your MySQL server is running, the database name in `jdbc.url` exists, and the credentials in `jdbc.usuario` / `jdbc.password` are correct.
   </Accordion>
 </AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Architecture overview" icon="diagram-project" href="/architecture/overview">
+    Understand the package structure and DAO layer design.
+  </Card>
+  <Card title="Database configuration" icon="database" href="/configuration/database">
+    Full reference for all `aplicacion.properties` keys.
+  </Card>
+  <Card title="CSV export" icon="file-csv" href="/features/csv-export">
+    How option 1 queries and writes unassigned crew records.
+  </Card>
+  <Card title="XML processing" icon="file-code" href="/features/xml-processing">
+    Document structure expected by the XML processor.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

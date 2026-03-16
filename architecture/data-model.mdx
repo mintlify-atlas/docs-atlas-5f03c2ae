@@ -1,0 +1,184 @@
+---
+title: "Data Model"
+description: "Domain entities (Value Objects), their fields, and the relationships between them."
+---
+
+Every database table is represented by a plain Java bean in the `eu.esa.gemis.vo` package. There are no ORM annotations; field mapping is performed manually inside each JDBC DAO implementation.
+
+## Entity Relationships
+
+```
+CuerpoCeleste ◄──────── Mision ──────── Nave
+                           ▲
+                           │  (via TripulanteMision)
+                        Tripulante
+
+CuerpoCeleste ◄──────── Base ◄──────── GeneradorPrincipal
+```
+
+- **`Mision`** holds object references to `Nave` and `CuerpoCeleste` (the destination body).
+- **`TripulanteMision`** is the join entity that links `Tripulante` to `Mision` and stores the crew member's `rol` on that mission.
+- **`Base`** is located on a `CuerpoCeleste`.
+- **`GeneradorPrincipal`** belongs to a `Base`.
+
+## Entities
+
+<Tabs>
+  <Tab title="Mision">
+    ```java
+    // eu.esa.gemis.vo.Mision
+    private int           identificador
+    private String        nombre
+    private Nave          nave              // FK → T_NAVE.codigo
+    private CuerpoCeleste cuerpoCeleste     // FK → T_CUERPO_CELESTE.identificador
+    private LocalDate     fechaInicio
+    private LocalDate     fechaFinEstimado
+    private LocalDate     fechaFin          // nullable
+    private String        estado
+    private String        objetivoPrincipal
+    private int           presupuestoAsignado
+    ```
+
+    | Field | Java Type | Notes |
+    |---|---|---|
+    | `identificador` | `int` | Primary key |
+    | `nombre` | `String` | Mission name |
+    | `nave` | `Nave` | Spacecraft assigned to this mission |
+    | `cuerpoCeleste` | `CuerpoCeleste` | Destination celestial body |
+    | `fechaInicio` | `LocalDate` | Launch / start date |
+    | `fechaFinEstimado` | `LocalDate` | Planned end date |
+    | `fechaFin` | `LocalDate` | Actual end date; may be `null` |
+    | `estado` | `String` | Current mission status |
+    | `objetivoPrincipal` | `String` | Primary mission objective |
+    | `presupuestoAsignado` | `int` | Allocated budget |
+  </Tab>
+
+  <Tab title="Tripulante">
+    ```java
+    // eu.esa.gemis.vo.Tripulante
+    private int       numeroTripulante
+    private String    nombre
+    private String    apellidos
+    private int       identificadorEsa
+    private int       nivelExperiencia
+    private String    especialidad
+    private LocalDate fechaIngresoEsa
+    ```
+
+    | Field | Java Type | Notes |
+    |---|---|---|
+    | `numeroTripulante` | `int` | Internal sequence number (PK) |
+    | `nombre` | `String` | First name |
+    | `apellidos` | `String` | Surname(s) |
+    | `identificadorEsa` | `int` | ESA personnel identifier (business key) |
+    | `nivelExperiencia` | `int` | Experience level |
+    | `especialidad` | `String` | Technical speciality |
+    | `fechaIngresoEsa` | `LocalDate` | Date of joining the ESA |
+  </Tab>
+
+  <Tab title="Nave">
+    ```java
+    // eu.esa.gemis.vo.Nave
+    private String codigo
+    private String nombre
+    private String tipo
+    private int    capacidadTripulacion
+    private short  autonomiaDias
+    ```
+
+    | Field | Java Type | Notes |
+    |---|---|---|
+    | `codigo` | `String` | Primary key / spacecraft code |
+    | `nombre` | `String` | Spacecraft name |
+    | `tipo` | `String` | Spacecraft type |
+    | `capacidadTripulacion` | `int` | Maximum crew capacity |
+    | `autonomiaDias` | `short` | Operational autonomy in days |
+  </Tab>
+
+  <Tab title="CuerpoCeleste">
+    ```java
+    // eu.esa.gemis.vo.CuerpoCeleste
+    private int    identificador
+    private String nombre
+    private String tipo
+    private double gravedadSuperficieMs2
+    ```
+
+    | Field | Java Type | Notes |
+    |---|---|---|
+    | `identificador` | `int` | Primary key |
+    | `nombre` | `String` | Name of the celestial body |
+    | `tipo` | `String` | Classification (planet, satellite, etc.) |
+    | `gravedadSuperficieMs2` | `double` | Surface gravity in m/s² |
+  </Tab>
+
+  <Tab title="Base">
+    ```java
+    // eu.esa.gemis.vo.Base
+    private int           identificador
+    private String        nombre
+    private String        funcionPrincipal
+    private LocalDate     fechaEstablecimiento
+    private String        estado
+    private CuerpoCeleste cuerpoCeleste     // FK → T_CUERPO_CELESTE
+    ```
+
+    | Field | Java Type | Notes |
+    |---|---|---|
+    | `identificador` | `int` | Primary key |
+    | `nombre` | `String` | Base name |
+    | `funcionPrincipal` | `String` | Primary function of the base |
+    | `fechaEstablecimiento` | `LocalDate` | Date the base was established |
+    | `estado` | `String` | Operational status |
+    | `cuerpoCeleste` | `CuerpoCeleste` | Body where the base is located |
+  </Tab>
+
+  <Tab title="GeneradorPrincipal">
+    ```java
+    // eu.esa.gemis.vo.GeneradorPrincipal
+    private int    identificador
+    private String nombre
+    private String tipo
+    private double potenciaMw
+    private Base   base           // FK → T_BASE
+    ```
+
+    | Field | Java Type | Notes |
+    |---|---|---|
+    | `identificador` | `int` | Primary key |
+    | `nombre` | `String` | Generator name |
+    | `tipo` | `String` | Generator type |
+    | `potenciaMw` | `double` | Power output in megawatts |
+    | `base` | `Base` | Base that owns this generator |
+  </Tab>
+
+  <Tab title="TripulanteMision">
+    ```java
+    // eu.esa.gemis.vo.TripulanteMision
+    private Mision     mision       // FK → T_MISION
+    private Tripulante tripulante   // FK → T_TRIPULANTE
+    private String     rol
+    ```
+
+    | Field | Java Type | Notes |
+    |---|---|---|
+    | `mision` | `Mision` | The mission this assignment belongs to |
+    | `tripulante` | `Tripulante` | The crew member assigned |
+    | `rol` | `String` | Role of the crew member on this mission |
+
+    <Note>
+      `TripulanteMision` models the many-to-many relationship between `T_TRIPULANTE` and `T_MISION`. Foreign keys are represented as full object references rather than plain integer IDs, consistent with the pattern used throughout the VO layer.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Relationship Summary
+
+| Relationship | Cardinality | How modelled |
+|---|---|---|
+| `Mision` → `Nave` | Many-to-one | `Mision.nave` (`Nave` reference) |
+| `Mision` → `CuerpoCeleste` | Many-to-one | `Mision.cuerpoCeleste` (`CuerpoCeleste` reference) |
+| `TripulanteMision` → `Mision` | Many-to-one | `TripulanteMision.mision` |
+| `TripulanteMision` → `Tripulante` | Many-to-one | `TripulanteMision.tripulante` |
+| `Base` → `CuerpoCeleste` | Many-to-one | `Base.cuerpoCeleste` |
+| `GeneradorPrincipal` → `Base` | Many-to-one | `GeneradorPrincipal.base` |
